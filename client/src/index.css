@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+@theme { --color-brand-50: #eff6ff; --color-brand-100: #dbeafe; --color-brand-500: #2563eb; --color-brand-600: #1d4ed8; --color-brand-700: #1d4ed8; }
+
+@layer base {
+  html { @apply bg-slate-50; }
+  body { @apply min-w-0 bg-slate-50 font-sans text-slate-900 antialiased; }
+  button, a { @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500; }
+  input, select, textarea { @apply border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-100; }
+  th { @apply bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-500; }
+}

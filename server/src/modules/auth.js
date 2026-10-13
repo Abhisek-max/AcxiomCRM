@@ -1,0 +1,18 @@
+import express from 'express';
+import bcrypt from 'bcryptjs';
+import rateLimit from 'express-rate-limit';
+import { z } from 'zod';
+import { prisma } from '../config/prisma.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
+import { audit } from '../services/auditService.js';
+import { cookieOptions, createSession, deleteSession, deleteUserSessions } from '../services/sessionService.js';
+import { requireAuth, requireCsrf } from '../middleware/auth.js';
+const router = express.Router(); const publicLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false, message: { error: { code: 'RATE_LIMITED', message: 'Please try again later.' } } });
+const credentials = z.object({ email: z.string().trim().toLowerCase().email().max(191), password: z.string().min(8).max(128) });
+const safeUser = (user) => ({ id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: user.role?.name, isActive: user.isActive, createdAt: user.createdAt, updatedAt: user.updatedAt });
+router.post('/register', publicLimiter, asyncHandler(async (req,res) => { const body = credentials.extend({ firstName:z.string().trim().min(1).max(100), lastName:z.string().trim().min(1).max(100) }).parse(req.body); const { password, ...userInput } = body; const role = await prisma.role.upsert({ where:{name:'SalesExecutive'}, update:{}, create:{name:'SalesExecutive',description:'Default public registration role'} }); try { const user = await prisma.user.create({ data:{ ...userInput, passwordHash:await bcrypt.hash(password,12), roleId:role.id }, include:{role:true} }); const session=await createSession(user.id); res.cookie('acxiom_session',session.id,cookieOptions).status(201).json({ user:safeUser(user), csrfToken:session.csrfSecret }); } catch (e) { if (e.code==='P2002') return res.status(409).json({error:{code:'DUPLICATE_ACCOUNT',message:'Unable to register this account.'}}); throw e; }}));
+router.post('/login', publicLimiter, asyncHandler(async (req,res) => { const body=credentials.parse(req.body); const user=await prisma.user.findUnique({where:{email:body.email},include:{role:true}}); const invalid= !user || !user.isActive || (user.lockedUntil && user.lockedUntil>new Date()) || !(user && await bcrypt.compare(body.password,user.passwordHash)); if(invalid){ if(user){ const attempts=user.failedLoginAttempts+1; const locked=attempts>=5; await prisma.user.update({where:{id:user.id},data:{failedLoginAttempts:locked?0:attempts,lockedUntil:locked?new Date(Date.now()+15*60000):user.lockedUntil}}); await audit({userId:user.id,action:locked?'ACCOUNT_LOCKED':'LOGIN_FAILED',entity:'User',recordId:String(user.id),ipAddress:req.ip}); } return res.status(401).json({error:{code:'INVALID_CREDENTIALS',message:'Invalid email or password.'}}); } await prisma.user.update({where:{id:user.id},data:{failedLoginAttempts:0,lockedUntil:null}}); await deleteUserSessions(user.id); const session=await createSession(user.id); await audit({userId:user.id,action:'LOGIN_SUCCEEDED',entity:'User',recordId:String(user.id),ipAddress:req.ip}); res.cookie('acxiom_session',session.id,cookieOptions).json({user:safeUser(user),csrfToken:session.csrfSecret}); }));
+router.get('/me',requireAuth,(req,res)=>res.json({user:safeUser(req.user),csrfToken:req.session.csrfSecret}));
+router.get('/csrf',requireAuth,(req,res)=>res.json({csrfToken:req.session.csrfSecret}));
+router.post('/logout',requireAuth,requireCsrf,asyncHandler(async(req,res)=>{await deleteSession(req.session.id); await audit({userId:req.user.id,action:'LOGOUT',entity:'User',recordId:String(req.user.id),ipAddress:req.ip});res.clearCookie('acxiom_session',cookieOptions).status(204).end();}));
+export default router;

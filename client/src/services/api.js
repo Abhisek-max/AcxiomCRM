@@ -1,0 +1,2 @@
+let csrfToken;
+export async function api(path, options = {}) { const response = await fetch(`/api${path}`, { credentials: 'include', headers: { 'Content-Type': 'application/json', ...(csrfToken && options.method && options.method !== 'GET' ? { 'X-CSRF-Token': csrfToken } : {}), ...options.headers }, ...options }); const data = response.status === 204 ? null : await response.json(); if (!response.ok) throw new Error(data?.error?.message || 'Request failed.'); if (data?.csrfToken) csrfToken = data.csrfToken; return data; }

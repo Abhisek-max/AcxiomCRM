@@ -1,0 +1,26 @@
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import cookieParser from 'cookie-parser';
+import { env } from './config/env.js';
+import { errorHandler, notFound } from './middleware/errorHandler.js';
+import authRouter from './modules/auth.js';
+import adminRouter from './modules/admin.js';
+import crmRouter from './modules/crm.js';
+import analyticsRouter from './modules/analytics.js';
+
+const app = express();
+app.use(helmet());
+app.use(cors({ origin: env.frontendOrigin, credentials: true }));
+app.use(express.json({ limit: '100kb' }));
+app.use(cookieParser());
+if (env.nodeEnv !== 'test') app.use(morgan('dev'));
+app.get('/api/health', (_req, res) => res.status(200).json({ status: 'ok', service: 'acxiomcrm-api', timestamp: new Date().toISOString() }));
+app.use('/api/auth', authRouter);
+app.use('/api/admin', adminRouter);
+app.use('/api', analyticsRouter);
+app.use('/api', crmRouter);
+app.use(notFound);
+app.use(errorHandler);
+export default app;
